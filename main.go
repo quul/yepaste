@@ -118,37 +118,6 @@ func initJWT(db *gorm.DB) *jwt.GinJWTMiddleware {
 	return authMiddleware
 }
 
-func createTestData(db *gorm.DB) {
-	var user model.User
-	err := db.First(&user, "username = ?", "admin").Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		argon := argon2.DefaultConfig()
-		encoded, _ := argon.HashEncoded([]byte("admin"))
-		user := &model.User{
-			Model:        gorm.Model{},
-			Username:     "admin",
-			PasswordHash: encoded,
-			APIToken:     "",
-		}
-		db.Create(&user)
-	}
-	db.First(&user, "username = ?", "admin")
-	var content model.PasteContent
-	err = db.First(&content, "key = ?", "test").Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		content := &model.PasteContent{
-			Key:     "test",
-			Content: []byte("ABCDEFG"),
-			UserId:  user.ID,
-		}
-		err := db.Create(&content).Error
-		if err != nil {
-			println("error", err)
-		}
-	}
-
-}
-
 func checkKeyExist(key string, db *gorm.DB) bool {
 	var pasteData model.PasteContent
 	err := db.First(&pasteData, "key = ?", key).Error
@@ -159,7 +128,7 @@ func checkKeyExist(key string, db *gorm.DB) bool {
 }
 
 func generateKey(fixedLength int) (string, error) {
-	randBytes := make([]byte, 4)
+	randBytes := make([]byte, fixedLength) // Directly using fixedLength here do waste some bytes.
 	_, err := rand.Read(randBytes)
 	if err != nil {
 		return "", err
@@ -168,7 +137,7 @@ func generateKey(fixedLength int) (string, error) {
 
 	// We need 5 bits * 6 == 30 bits information
 	// so slice the key to first 6 bytes
-	key = key[:6]
+	key = key[:fixedLength]
 	return key, nil
 }
 
@@ -176,8 +145,6 @@ func main() {
 	r := gin.Default()
 	db := initDB()
 	authMiddleware := initJWT(db)
-
-	createTestData(db)
 
 	// Login Action
 	r.POST("/a/login", authMiddleware.LoginHandler)
@@ -220,7 +187,7 @@ func main() {
 		}
 		var contentMeta ContentMeta
 		if err := c.ShouldBind(&contentMeta); err != nil {
-			log.Fatal("No password in", err) // TODO: I don't know when this will exec
+			log.Fatal("No password in", err) // This shouldn't be exec in theory
 		}
 		if content.Password != "" && content.Password != contentMeta.Password {
 			c.JSON(http.StatusForbidden, gin.H{
@@ -286,7 +253,7 @@ func main() {
 			defer func(file multipart.File) {
 				err := file.Close()
 				if err != nil {
-
+					log.Fatal("Failed to close file")
 				}
 			}(file)
 			if key != "" { // Check user provider key's validity, TODO: it sees that I should use validation via gin
