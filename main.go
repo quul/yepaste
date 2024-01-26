@@ -5,12 +5,6 @@ import (
 	"encoding/base32"
 	"errors"
 	"fmt"
-	jwt "github.com/appleboy/gin-jwt/v2"
-	"github.com/gin-gonic/gin"
-	"github.com/matthewhartstonge/argon2"
-	"github.com/quul/yepaste/model"
-	"gorm.io/driver/postgres"
-	"gorm.io/gorm"
 	"io"
 	"log"
 	"mime/multipart"
@@ -19,6 +13,13 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	jwt "github.com/appleboy/gin-jwt/v2"
+	"github.com/gin-gonic/gin"
+	"github.com/matthewhartstonge/argon2"
+	"github.com/quul/yepaste/model"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
 )
 
 const identityKey = "id"
@@ -148,6 +149,7 @@ func main() {
 
 	// Login Action
 	r.POST("/a/login", authMiddleware.LoginHandler)
+	// TODO: 自定义Cookie有效期
 
 	// Get Content
 	r.GET("/r/:key", func(c *gin.Context) {
@@ -157,8 +159,8 @@ func main() {
 		var reqParam ReqParam
 		if err := c.ShouldBindUri(&reqParam); err != nil {
 			c.JSON(http.StatusNotAcceptable, gin.H{
-				"status": http.StatusNotAcceptable,
-				"msg":    err,
+				"code": http.StatusNotAcceptable,
+				"msg":  err,
 			})
 			return
 		}
@@ -166,8 +168,8 @@ func main() {
 		result := db.First(&content, "key = ?", reqParam.Key)
 		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{
-				"status": http.StatusNotFound,
-				"msg":    "Document Not Found",
+				"code": http.StatusNotFound,
+				"msg":  "Document Not Found",
 			})
 			return
 		}
@@ -175,8 +177,8 @@ func main() {
 		// Disable the visit after expires.
 		if content.ValidTill != nil && time.Now().Compare(*content.ValidTill) > 0 {
 			c.JSON(http.StatusForbidden, gin.H{ // TODO: Maybe it always viewable for uploader?
-				"status": http.StatusForbidden,
-				"msg":    "Document expires",
+				"code": http.StatusForbidden,
+				"msg":  "Document expires",
 			})
 			return
 		}
@@ -191,8 +193,8 @@ func main() {
 		}
 		if content.Password != "" && content.Password != contentMeta.Password {
 			c.JSON(http.StatusForbidden, gin.H{
-				"status": http.StatusForbidden,
-				"msg":    "Password Needed or password error",
+				"code": http.StatusForbidden,
+				"msg":  "Password Needed or password error",
 			})
 			return
 		}
@@ -214,8 +216,8 @@ func main() {
 			err := db.First(&user, "username = ?", username).Error
 			if err != nil { // Actually I don't know why I had to handle this... JWT should already do this.
 				c.JSON(http.StatusInternalServerError, gin.H{
-					"status": http.StatusInternalServerError,
-					"msg":    fmt.Sprintf("No such user named %s", username),
+					"code": http.StatusInternalServerError,
+					"msg":  fmt.Sprintf("No such user named %s", username),
 				})
 				return
 			}
@@ -229,24 +231,24 @@ func main() {
 			contentFile, err := c.FormFile("c")
 			if err != nil {
 				c.JSON(http.StatusBadRequest, gin.H{
-					"status": http.StatusBadRequest,
-					"msg":    fmt.Sprintf("Failed to parse file: %s", err),
+					"code": http.StatusBadRequest,
+					"msg":  fmt.Sprintf("Failed to parse file: %s", err),
 				})
 				return
 			}
 			file, err := contentFile.Open()
 			if err != nil {
 				c.JSON(http.StatusBadRequest, gin.H{
-					"status": http.StatusBadRequest,
-					"msg":    fmt.Sprintf("Failed to parse file: %s", err),
+					"code": http.StatusBadRequest,
+					"msg":  fmt.Sprintf("Failed to parse file: %s", err),
 				})
 				return
 			}
 			uploadedContent, err := io.ReadAll(file) // TODO: Handle non text file and size limit
 			if err != nil {
 				c.JSON(http.StatusBadRequest, gin.H{
-					"status": http.StatusBadRequest,
-					"msg":    fmt.Sprintf("Failed to parse file: %s", err),
+					"code": http.StatusBadRequest,
+					"msg":  fmt.Sprintf("Failed to parse file: %s", err),
 				})
 				return
 			}
@@ -266,8 +268,8 @@ func main() {
 
 				if msg != "" {
 					c.JSON(http.StatusBadRequest, gin.H{
-						"status": http.StatusBadRequest,
-						msg:      msg,
+						"code": http.StatusBadRequest,
+						msg:    msg,
 					})
 				}
 				key = "~" + key
@@ -290,8 +292,8 @@ func main() {
 				}
 				if err != nil {
 					c.JSON(http.StatusBadRequest, gin.H{
-						"status": http.StatusBadRequest,
-						"msg":    "Error while parsing duration",
+						"code": http.StatusBadRequest,
+						"msg":  "Error while parsing duration",
 					})
 					return
 				}
@@ -314,8 +316,8 @@ func main() {
 				if err != nil {
 					if strings.HasPrefix(key, "~") {
 						c.JSON(http.StatusBadRequest, gin.H{
-							"status": http.StatusBadRequest,
-							"msg":    fmt.Sprintf("Failed to create with certain key %s, with error %s", key, err),
+							"code": http.StatusBadRequest,
+							"msg":  fmt.Sprintf("Failed to create with certain key %s, with error %s", key, err),
 						})
 						return
 					} else {
@@ -324,16 +326,16 @@ func main() {
 				} else {
 					log.Printf("Created content with key: %s", key)
 					c.JSON(http.StatusOK, gin.H{
-						"status": http.StatusOK,
-						"msg":    "Successfully created",
-						"link":   fmt.Sprintf("%sr/%s", baseDomain, key), // TODO: Using URL struct
+						"code": http.StatusOK,
+						"msg":  "Successfully created",
+						"link": fmt.Sprintf("%sr/%s", baseDomain, key), // TODO: Using URL struct
 					})
 					return
 				}
 			}
 			c.JSON(http.StatusInternalServerError, gin.H{
-				"status": http.StatusInternalServerError,
-				"msg":    fmt.Sprintf("Failed to create certain paste, please try again."),
+				"code": http.StatusInternalServerError,
+				"msg":  fmt.Sprintf("Failed to create certain paste, please try again."),
 			})
 			return
 		})
@@ -345,21 +347,21 @@ func main() {
 			var reqParam ReqParam
 			if err := c.ShouldBindUri(&reqParam); err != nil {
 				c.JSON(http.StatusNotAcceptable, gin.H{
-					"status": http.StatusNotAcceptable,
-					"msg":    err,
+					"code": http.StatusNotAcceptable,
+					"msg":  err,
 				})
 				return
 			}
 			if !checkKeyExist(reqParam.Key, db) {
 				c.JSON(http.StatusNotFound, gin.H{
-					"status": http.StatusNotFound,
-					"msg":    "Certain key " + reqParam.Key + " existed.",
+					"code": http.StatusNotFound,
+					"msg":  "Certain key " + reqParam.Key + " existed.",
 				})
 				return
 			} else {
 				c.JSON(http.StatusOK, gin.H{
-					"status": http.StatusOK,
-					"msg":    "Certain key " + reqParam.Key + " not existed.",
+					"code": http.StatusOK,
+					"msg":  "Certain key " + reqParam.Key + " not existed.",
 				})
 				return
 			}
@@ -374,10 +376,9 @@ func main() {
 		auth.GET("/check", func(c *gin.Context) {
 			claims := jwt.ExtractClaims(c)
 			c.JSON(http.StatusOK, gin.H{
-				"status":   "ok",
+				"code":     http.StatusOK,
 				"username": claims[identityKey],
 			})
-			return
 		})
 	}
 
