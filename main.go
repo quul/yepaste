@@ -329,6 +329,7 @@ func main() {
 						"code": http.StatusOK,
 						"msg":  "Successfully created",
 						"link": fmt.Sprintf("%sr/%s", baseDomain, key), // TODO: Using URL struct
+						"key":  key,
 					})
 					return
 				}
